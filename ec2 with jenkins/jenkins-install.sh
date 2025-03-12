@@ -1,49 +1,65 @@
 #!/bin/bash
 
-# Clean metadata & update system
-sudo yum clean all
-sudo yum update -y
+# Log everything to /var/log/user-data.log for debugging
+exec > /var/log/user-data.log 2>&1
+set -x  # Enable debug mode
 
-# Install Jenkins
-sudo wget -O /etc/yum.repos.d/jenkins.repo \
-    https://pkg.jenkins.io/redhat-stable/jenkins.repo
-sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-sudo yum upgrade -y
+echo "### Updating System Packages ###"
+sudo dnf clean all
+sudo dnf update -y
 
-# Install Java 17 (Ensure correct version)
-sudo yum install -y java-17-amazon-corretto
+echo "### Installing Java (Amazon Corretto 17) ###"
+sudo dnf install -y java-17-amazon-corretto || { echo "Java installation failed"; exit 1; }
 
-# Set Java 17 as the default
-sudo alternatives --set java /usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
+echo "### Installing Jenkins Dependencies ###"
+sudo dnf install -y fontconfig tzdata libXext || { echo "Dependency installation failed"; exit 1; }
 
-# Verify Java version
-java -version
+echo "### Adding Jenkins Repository ###"
+sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo || { echo "Failed to download Jenkins repo"; exit 1; }
 
-# Install Jenkins
-sudo yum install -y jenkins
+echo "### Importing Jenkins GPG Key ###"
+sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key || { echo "Failed to import Jenkins GPG key"; exit 1; }
 
-# Set permissions for Jenkins user
-sudo chown -R jenkins:jenkins /var/lib/jenkins
-sudo chmod -R 755 /var/lib/jenkins
+# Verify the repo file exists
+if [ ! -f /etc/yum.repos.d/jenkins.repo ]; then
+    echo "Error: Jenkins repo file not found!"
+    exit 1
+fi
 
-# Start & Enable Jenkins service
+echo "### Installing Jenkins ###"
+sudo dnf install -y jenkins || { echo "Jenkins installation failed"; exit 1; }
+
+echo "### Enabling and Starting Jenkins Service ###"
 sudo systemctl daemon-reload
-sudo systemctl enable --now jenkins
+sudo systemctl enable jenkins
+sudo systemctl start jenkins
 
-# Verify Jenkins status
-sudo systemctl status jenkins --no-pager
+# Wait for Jenkins to start
+sleep 15
+sudo systemctl status jenkins --no-pager || { echo "Jenkins failed to start"; exit 1; }
 
-# Install Git
-sudo yum install -y git
+echo "### Configuring Firewall Rules for Jenkins ###"
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload || { echo "Firewall configuration failed"; exit 1; }
 
-# Install Terraform
-sudo yum install -y yum-utils
+echo "### Installing Git ###"
+sudo dnf install -y git || { echo "Git installation failed"; exit 1; }
+
+echo "### Installing Terraform ###"
+sudo dnf install -y yum-utils
 sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
-sudo yum install -y terraform
+sudo dnf install -y terraform || { echo "Terraform installation failed"; exit 1; }
 
-# Install kubectl (latest version)
-curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-sudo chmod +x ./kubectl
-sudo mkdir -p $HOME/bin && sudo cp ./kubectl $HOME/bin/kubectl
-echo 'export PATH=$PATH:$HOME/bin' >> ~/.bashrc
-source ~/.bashrc
+echo "### Installing Kubectl (Latest Stable Version) ###"
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/ || { echo "Kubectl installation failed"; exit 1; }
+
+echo "### Verifying Installed Versions ###"
+java -version
+jenkins --version || echo "Jenkins installation verification failed!"
+git --version
+terraform -version
+kubectl version --client
+
+echo "### Jenkins Installation Completed Successfully! ###"

@@ -1,10 +1,10 @@
-data "aws_ami" "example" {
+data "aws_ami" "amazon_linux" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["amazon"] # ✅ Amazon's official AMIs
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-kernel-*-hvm-*-x86_64-gp2"]
+    values = ["al2023-ami-*-kernel-6.1-x86_64"] # ✅ Fetch latest Amazon Linux 2023 AMI
   }
 
   filter {
